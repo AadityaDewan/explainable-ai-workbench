@@ -1,0 +1,59 @@
+XAI WORKBENCH - COPY-PASTE COMMANDS
+Run all commands from inside the unzipped xai_workbench folder.
+
+===== WINDOWS (PowerShell) =====
+# 1. Install Python 3.10-3.12 (or download from https://www.python.org/downloads/ and tick "Add to PATH")
+winget install -e --id Python.Python.3.12
+# 2. Close and reopen PowerShell, then:
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+#    (if blocked: Set-ExecutionPolicy -Scope Process Bypass)
+#    (Command Prompt instead: .venv\Scripts\activate.bat)
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+# Optional - Grad-CAM tab:
+pip install torch
+# Optional environment variables:
+copy .env.example .env
+# Run:
+python app.py
+# Open http://127.0.0.1:5000   (stop with Ctrl+C)
+
+===== MACOS (Terminal) =====
+# 1. Install Python (via Homebrew; install Homebrew from https://brew.sh if missing)
+brew install python@3.12
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+# Optional - Grad-CAM tab:
+pip install torch
+cp .env.example .env
+python app.py
+# Open http://127.0.0.1:5000   (stop with Ctrl+C)
+
+===== LINUX (Terminal, Debian/Ubuntu) =====
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+# Optional - Grad-CAM tab:
+pip install torch
+cp .env.example .env
+python app.py
+# Open http://127.0.0.1:5000   (stop with Ctrl+C)
+# Fedora: sudo dnf install -y python3 python3-pip   |  Arch: sudo pacman -S python python-pip
+
+===== LATER RUNS / REBUILD =====
+# Windows: .\.venv\Scripts\Activate.ps1   then   python app.py
+# macOS/Linux: source .venv/bin/activate  then   python app.py
+# Reset user-study data: delete the file study.db
+# Different port: Windows  $env:PORT=8000; python app.py   |  macOS/Linux  PORT=8000 python app.py
+
+===== OPTIONAL DEPLOYMENT (Render.com free tier) =====
+# Push folder to GitHub, create a Web Service, then set:
+#   Build command: pip install -r requirements.txt gunicorn
+#   Start command: gunicorn app:app --timeout 120
+# (Add torch to build command only if you want Grad-CAM; the free tier may be too small.)

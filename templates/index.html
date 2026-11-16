@@ -1,0 +1,91 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XAI Workbench</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#1d2433;--card:#fff;--ac:#2f5bea;--pos:#2f8f5b;--neg:#d0453b;--bd:#dde1e8}
+@media(prefers-color-scheme:dark){:root{--bg:#14171d;--fg:#e8ebf0;--card:#1e222b;--bd:#323846}}
+body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+header{padding:14px 20px;background:var(--ac);color:#fff}header h1{margin:0;font-size:20px}
+nav{display:flex;flex-wrap:wrap;gap:6px;padding:10px 20px}
+nav button,.go{border:1px solid var(--bd);background:var(--card);color:var(--fg);padding:7px 12px;border-radius:6px;cursor:pointer}
+nav button.on,.go{background:var(--ac);color:#fff;border-color:var(--ac)}
+main{padding:0 20px 30px;max-width:1100px}.tab{display:none}.tab.on{display:block}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px;margin:10px 0;overflow-x:auto}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px}
+input,select,textarea{padding:6px;border:1px solid var(--bd);border-radius:5px;background:var(--card);color:var(--fg)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.bar{display:flex;align-items:center;font-size:12px;margin:2px 0}.bar span:first-child{width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar i{display:block;height:11px;border-radius:2px}.err{color:var(--neg);font-weight:600}table{border-collapse:collapse}td,th{border:1px solid var(--bd);padding:5px 9px;text-align:left}
+</style></head><body>
+<header><h1>XAI Workbench</h1><div id="meta" style="font-size:13px"></div></header>
+<nav id="nav"></nav>
+<main>
+<div class="tab on" id="t-local"><div class="card"><div class="row">
+Model <select id="model"></select> Test instance <input id="idx" type="number" min="0" value="0" style="width:70px">
+<button class="go" onclick="runLocal()">Explain</button></div><div id="lsum"></div><div id="lerr" class="err"></div></div>
+<div class="grid"><div class="card"><b>SHAP (sampled Shapley)</b><div id="b-shap"></div></div><div class="card"><b>LIME (local surrogate)</b><div id="b-lime"></div></div>
+<div class="card"><b>Permutation importance (global)</b><div id="b-perm"></div></div><div class="card"><b>Counterfactual sensitivity</b><div id="b-cf"></div></div></div>
+<div class="card"><b>Counterfactual explanations</b><div id="cfl"></div></div><div class="card"><b>Agreement between methods</b><div id="agr"></div></div></div>
+
+<div class="tab" id="t-stab"><div class="card"><div class="row">Noise (fraction of feature SD) <input id="eps" type="number" step="0.01" value="0.05" style="width:80px">
+Runs <input id="nrun" type="number" value="10" style="width:60px"><button class="go" onclick="runStab()">Run stability test</button></div>
+<p>Uses the instance and model selected in the first tab. The "seed-only" baseline re-runs the same input with a different random seed, separating sampling noise from sensitivity to the input.</p><div id="stab"></div></div></div>
+
+<div class="tab" id="t-dis"><div class="card"><button class="go" onclick="runDis()">Find SHAP vs LIME disagreements (20 instances)</button><div id="dis"></div></div></div>
+
+<div class="tab" id="t-pdp"><div class="card"><div class="row">Feature <select id="pfeat"></select><button class="go" onclick="runPdp()">Plot partial dependence</button></div><canvas id="pdp" width="600" height="260"></canvas><div id="pdperr" class="err"></div></div></div>
+
+<div class="tab" id="t-cam"><div class="card"><div class="row">Digit test image <input id="cidx" type="number" min="0" value="0" style="width:70px"><button class="go" onclick="runCam()">Run Grad-CAM</button></div>
+<div id="camerr" class="err"></div><div class="row"><div>Image<br><canvas id="c1" width="160" height="160"></canvas></div><div>Grad-CAM<br><canvas id="c2" width="160" height="160"></canvas></div><div>Grad-CAM (noisy input)<br><canvas id="c3" width="160" height="160"></canvas></div></div><div id="caminfo"></div></div></div>
+
+<div class="tab" id="t-user"><div class="card"><b>User study</b> – first view an explanation in the Local tab, then rate it.
+<div class="row">Participant ID <input id="pid"> Method <select id="smeth"><option value="shap">SHAP</option><option value="lime">LIME</option><option value="cf">Counterfactual</option><option value="perm">Permutation</option><option value="pdp">PDP</option><option value="gradcam">Grad-CAM</option></select></div>
+<div class="row">Understandability (1-5) <input id="su" type="number" min="1" max="5" value="3" style="width:55px"> Trust (1-5) <input id="st" type="number" min="1" max="5" value="3" style="width:55px">
+<label><input type="checkbox" id="sc"> Correctly named the most influential feature</label></div>
+<div class="row"><textarea id="scm" placeholder="Comment (optional)" rows="2" cols="50"></textarea><button class="go" onclick="sendStudy()">Submit</button></div><div id="serr" class="err"></div></div>
+<div class="card"><b>Results so far</b> <button onclick="loadStudy()">Refresh</button><div id="sum"></div></div></div>
+
+<div class="tab" id="t-disc"><div class="card"><h3>Which explanations can practitioners trust?</h3><ul>
+<li><b>Treat agreement as evidence, not proof.</b> If SHAP, LIME and permutation importance agree (high rank correlation and top-5 overlap), the finding is more credible. Agreement among methods that share a failure mode, such as correlated features, is weaker evidence.</li>
+<li><b>Check stability first.</b> An explanation that changes under 5% noise when the prediction does not change is a sampling artefact. Compare the perturbed score to the seed-only baseline.</li>
+<li><b>Counterfactuals are the most actionable</b> and are faithful by construction (the prediction really flips), but they show one of many possible changes and may suggest unrealistic values.</li>
+<li><b>Permutation importance and PDP are global.</b> They say nothing reliable about a single case, and are distorted by correlated features (this dataset has many).</li>
+<li><b>Grad-CAM</b> shows where the network looked, not why. Check it against noise and wrong predictions before relying on it.</li>
+<li><b>Use the Disagreement tab</b> to find cases where methods diverge, and the user study to check whether practitioners actually understand and over- or under-trust each format.</li></ul></div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id),J=async u=>{const r=await fetch(u),d=await r.json();if(!r.ok)throw new Error(d.error||'Error');return d};
+const tabs={local:'Local explanations',stab:'Stability',dis:'Disagreement',pdp:'Partial dependence',cam:'Grad-CAM',user:'User study',disc:'Trust discussion'};
+let FN=[];
+$('nav').innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-k="${k}" onclick="show('${k}')">${v}</button>`).join('');
+function show(k){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.id=='t-'+k));document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.k==k));if(k=='user')loadStudy()}
+show('local');
+const q=()=>`model=${$('model').value}&idx=${$('idx').value}`;
+function bars(id,v,names){const m=Math.max(...v.map(Math.abs))||1;
+ const o=v.map((x,i)=>[x,i]).sort((a,b)=>Math.abs(b[0])-Math.abs(a[0])).slice(0,10);
+ $(id).innerHTML=o.map(([x,i])=>`<div class="bar"><span title="${names[i]}">${names[i]}</span><i style="width:${Math.abs(x)/m*160}px;background:var(${x<0?'--neg':'--pos'})"></i>&nbsp;${x.toFixed(3)}</div>`).join('')}
+async function init(){const m=await J('/api/meta');FN=m.features;
+ $('model').innerHTML=m.models.map(x=>`<option>${x}</option>`).join('');$('idx').max=m.n_test-1;
+ $('pfeat').innerHTML=FN.map(f=>`<option>${f}</option>`).join('');
+ $('meta').textContent=Object.entries(m.accuracy).map(([k,v])=>`${k}: accuracy ${(v*100).toFixed(1)}%`).join(' | ')+` | ${m.n_test} test cases`+(m.has_torch?'':' | Grad-CAM needs PyTorch');runLocal()}
+async function runLocal(){$('lerr').textContent='';$('lsum').textContent='Computing…';
+ try{const d=await J('/api/explain?'+q());$('lsum').innerHTML=`P(benign) = <b>${d.prob.toFixed(3)}</b>, true label: ${d.true?'benign':'malignant'}. Bars: green = pushes toward benign / positive, red = opposite (LIME/SHAP); permutation and counterfactual bars are magnitudes.`;
+ ['shap','lime','perm','cf'].forEach(k=>bars('b-'+k,d.expl[k],FN));
+ $('cfl').innerHTML=d.counterfactuals.length?'<table><tr><th>Feature</th><th>From</th><th>To</th><th>Change (SD)</th></tr>'+d.counterfactuals.map(c=>`<tr><td>${c.feature}</td><td>${c.from.toFixed(3)}</td><td>${c.to.toFixed(3)}</td><td>${c.cost_sd.toFixed(2)}</td></tr>`).join('')+'</table>':'No single-feature change flips the prediction.';
+ $('agr').innerHTML='<table><tr><th>Pair</th><th>Spearman (|attr|)</th><th>Top-5 overlap</th></tr>'+d.agreement.map(a=>`<tr><td>${a.a} vs ${a.b}</td><td>${a.spearman.toFixed(2)}</td><td>${(a.top5_overlap*100).toFixed(0)}%</td></tr>`).join('')+'</table>'}
+ catch(e){$('lerr').textContent=e.message;$('lsum').textContent=''}}
+async function runStab(){$('stab').textContent='Running (may take ~30s)…';try{const d=await J(`/api/stability?${q()}&eps=${$('eps').value}&n=${$('nrun').value}`),p=d.perturbed;
+ $('stab').innerHTML=`<table><tr><th>Method</th><th>Seed-only baseline ρ</th><th>Mean ρ under noise</th><th>Min ρ</th><th>Mean top-5 overlap</th></tr>`+['shap','lime'].map(k=>`<tr><td>${k}</td><td>${d.baseline_seed_only[k].toFixed(2)}</td><td>${p[k].mean.toFixed(2)}</td><td>${p[k].min.toFixed(2)}</td><td>${(p[k+'_top5'].mean*100).toFixed(0)}%</td></tr>`).join('')+`</table><p>Predictions flipped in ${d.prediction_flips} of ${d.n} runs.</p>`}catch(e){$('stab').innerHTML=`<span class=err>${e.message}</span>`}}
+async function runDis(){$('dis').textContent='Running…';try{const d=await J('/api/disagree?model='+$('model').value);
+ $('dis').innerHTML=`<p>Mean SHAP–LIME Spearman over ${d.n} cases: <b>${d.mean_spearman.toFixed(2)}</b>. Correlation between model confidence and agreement: <b>${d.confidence_vs_agreement==null?'n/a':d.confidence_vs_agreement.toFixed(2)}</b>. Lowest-agreement cases:</p><table><tr><th>Idx</th><th>P(benign)</th><th>ρ</th><th>Top-5 overlap</th><th>SHAP top 3</th><th>LIME top 3</th></tr>`+d.worst.map(r=>`<tr><td>${r.idx}</td><td>${r.prob.toFixed(2)}</td><td>${r.spearman.toFixed(2)}</td><td>${r.overlap*100}%</td><td>${r.shap_top3.join(', ')}</td><td>${r.lime_top3.join(', ')}</td></tr>`).join('')+'</table><p>Use the idx values in the Local tab to inspect each case. Typical causes: correlated features, near-boundary predictions, and different baselines (SHAP: global; LIME: local neighbourhood).</p>'}catch(e){$('dis').innerHTML=`<span class=err>${e.message}</span>`}}
+async function runPdp(){$('pdperr').textContent='';try{const d=await J(`/api/pdp?model=${$('model').value}&feature=${encodeURIComponent($('pfeat').value)}`),c=$('pdp').getContext('2d');c.clearRect(0,0,600,260);
+ const x0=d.grid[0],x1=d.grid.at(-1),lo=Math.min(...d.pdp),hi=Math.max(...d.pdp)||1,X=v=>40+(v-x0)/(x1-x0)*540,Y=v=>230-(v-lo)/((hi-lo)||1)*200;
+ c.strokeStyle='#2f5bea';c.lineWidth=2;c.beginPath();d.grid.forEach((g,i)=>i?c.lineTo(X(g),Y(d.pdp[i])):c.moveTo(X(g),Y(d.pdp[i])));c.stroke();
+ c.fillStyle=getComputedStyle(document.body).color;c.fillText(d.feature+' →',250,252);c.fillText('P(benign) '+hi.toFixed(2),2,30);c.fillText(lo.toFixed(2),2,230)}catch(e){$('pdperr').textContent=e.message}}
+function heat(id,a,gray){const c=$(id).getContext('2d'),n=a.length,s=160/n;a.forEach((r,i)=>r.forEach((v,j)=>{const t=Math.round(255*(gray?1-v:1-v));c.fillStyle=gray?`rgb(${t},${t},${t})`:`rgb(255,${t},${t})`;c.fillRect(j*s,i*s,s,s)}))}
+async function runCam(){$('camerr').textContent='';$('caminfo').textContent='Training/Running…';try{const d=await J('/api/gradcam?idx='+$('cidx').value);heat('c1',d.image,true);heat('c2',d.cam);heat('c3',d.cam_noisy);
+ $('caminfo').textContent=`True ${d.true}, predicted ${d.pred}, predicted on noisy input ${d.pred_noisy}. Grad-CAM stability (Spearman clean vs noisy): ${d.cam_spearman.toFixed(2)}`}catch(e){$('camerr').textContent=e.message;$('caminfo').textContent=''}}
+async function sendStudy(){$('serr').textContent='';const b={participant:$('pid').value,method:$('smeth').value,understand:$('su').value,trust:$('st').value,correct:$('sc').checked,comment:$('scm').value};
+ const r=await fetch('/api/study',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}),d=await r.json();if(!r.ok)$('serr').textContent=d.error;else{$('serr').textContent='';alert('Saved');loadStudy()}}
+async function loadStudy(){const d=await J('/api/study/summary');$('sum').innerHTML=d.length?'<table><tr><th>Method</th><th>n</th><th>Understand</th><th>Trust</th><th>Comprehension correct</th></tr>'+d.map(r=>`<tr><td>${r.method}</td><td>${r.n}</td><td>${r.understand.toFixed(2)}</td><td>${r.trust.toFixed(2)}</td><td>${(r.comprehension_correct*100).toFixed(0)}%</td></tr>`).join('')+'</table>':'No responses yet.'}
+init();
+</script></body></html>
